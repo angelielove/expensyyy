@@ -1,0 +1,38 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isAppCollection(name) {
+      return name in [
+        'groceries',
+        'groceryPriceHistory',
+        'shoppingLists',
+        'bills',
+        'rentPayments'
+      ];
+    }
+
+    match /users/{uid} {
+      allow read, create, update, delete: if isOwner(uid);
+
+      match /{subcollection}/{recordId} {
+        allow read, delete: if isOwner(uid) && isAppCollection(subcollection);
+        allow create, update: if isOwner(uid)
+          && isAppCollection(subcollection)
+          && request.resource.data.userId == uid;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -113,9 +113,10 @@ export default function SettingsPage() {
     if (!file || !user) return;
     setAvatarBusy(true);
     try {
-      const url = await uploadAvatar(user.uid, file);
-      await updateProfile({ photoURL: url });
-      toast("Profile picture updated.");
+        const url = await uploadAvatar(user.uid, file);
+        await updateProfile({ photoURL: url });
+        await reload();
+        toast("Profile picture updated.");
     } catch (caught) {
       toast(caught instanceof Error ? caught.message : "Could not upload picture.", "error");
     } finally {
@@ -507,7 +508,7 @@ export default function SettingsPage() {
               <Input
                 type="number"
                 min="0"
-                step="0.01"
+                step="any"
                 value={minimumConsumption}
                 onChange={(event) => setMinimumConsumption(event.target.value)}
               />

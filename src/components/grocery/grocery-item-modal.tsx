@@ -27,7 +27,6 @@ export function GroceryItemModal({ open, onClose, item, onSaved }: GroceryItemMo
   const [brand, setBrand] = useState("");
   const [unit, setUnit] = useState("pc");
   const [price, setPrice] = useState("");
-  const [quantity, setQuantity] = useState("1");
   const [store, setStore] = useState("");
   const [dateAdded, setDateAdded] = useState(todayDateInput());
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +39,6 @@ export function GroceryItemModal({ open, onClose, item, onSaved }: GroceryItemMo
     setBrand(item?.brand ?? "");
     setUnit(item?.unit ?? "pc");
     setPrice(item ? String(item.currentPrice) : "");
-    setQuantity(item ? String(item.quantity) : "1");
     setStore(item?.store ?? "");
     setDateAdded(item?.dateAdded ?? todayDateInput());
     setError(null);
@@ -58,10 +56,6 @@ export function GroceryItemModal({ open, onClose, item, onSaved }: GroceryItemMo
       setError("Please enter a valid current price.");
       return;
     }
-    if (toNumber(quantity) <= 0) {
-      setError("Quantity should be greater than zero.");
-      return;
-    }
     setBusy(true);
     try {
       const draft = {
@@ -70,7 +64,7 @@ export function GroceryItemModal({ open, onClose, item, onSaved }: GroceryItemMo
         brand: brand.trim(),
         unit,
         currentPrice: toNumber(price),
-        quantity: toNumber(quantity),
+        quantity: item?.quantity ?? 1,
         store: store.trim(),
         dateAdded,
       };
@@ -150,15 +144,6 @@ export function GroceryItemModal({ open, onClose, item, onSaved }: GroceryItemMo
               onChange={(event) => setPrice(event.target.value)}
               placeholder="0.00"
               required
-            />
-          </Field>
-          <Field label="Quantity">
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={quantity}
-              onChange={(event) => setQuantity(event.target.value)}
             />
           </Field>
           <Field label="Store" hint="Optional">

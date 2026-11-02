@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   ClipboardList,
+  FileText,
   History,
   ListChecks,
   Minus,
@@ -30,7 +31,8 @@ import { ConfirmDialog } from "@/components/common/modal";
 import { StatCard } from "@/components/common/stat-card";
 import { GroceryItemModal } from "@/components/grocery/grocery-item-modal";
 import { ShoppingListModal } from "@/components/grocery/shopping-list-modal";
-import { deleteGrocery } from "@/services/groceryService";
+import { BulkAddGroceryModal } from "@/components/grocery/bulk-add-grocery-modal";
+import { deleteGrocery, deleteGroceries } from "@/services/groceryService";
 import { deleteShoppingList } from "@/services/shoppingService";
 import { priceChange, shoppingListTotal } from "@/lib/calculations";
 import { formatCurrency, formatNumber } from "@/lib/format";
@@ -52,10 +54,14 @@ export default function GroceryPage() {
   const [historyFilter, setHistoryFilter] = useState("all");
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Grocery | null>(null);
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [listModalOpen, setListModalOpen] = useState(false);
   const [editingList, setEditingList] = useState<ShoppingList | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -105,6 +111,17 @@ export default function GroceryPage() {
     });
   }, [groceries, search, category, sort]);
 
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const allVisibleSelected =
+    filteredGroceries.length > 0 &&
+    filteredGroceries.every((item) => selectedSet.has(item.id));
+
+  useEffect(() => {
+    setSelectedIds((prev) =>
+      prev.filter((id) => groceries.some((item) => item.id === id)),
+    );
+  }, [groceries]);
+
   const filteredHistory = useMemo(
     () =>
       priceHistory.filter(
@@ -147,11 +164,51 @@ export default function GroceryPage() {
         toast("Shopping list deleted.");
       }
       await reload();
+      if (deleteTarget.kind === "item") {
+        setSelectedIds((prev) => prev.filter((id) => id !== deleteTarget.id));
+      }
       setDeleteTarget(null);
     } catch (caught) {
       toast(caught instanceof Error ? caught.message : "Could not delete. Try again.", "error");
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((entry) => entry !== id) : [...prev, id],
+    );
+  };
+
+  const toggleAllVisible = () => {
+    if (allVisibleSelected) {
+      const visibleIds = new Set(filteredGroceries.map((item) => item.id));
+      setSelectedIds((prev) => prev.filter((id) => !visibleIds.has(id)));
+      return;
+    }
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      filteredGroceries.forEach((item) => next.add(item.id));
+      return [...next];
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setBulkDeleting(true);
+    try {
+      await deleteGroceries(profile?.uid ?? "", selectedIds);
+      toast(
+        `Deleted ${selectedIds.length} grocery item${selectedIds.length === 1 ? "" : "s"}. Price history is preserved.`,
+      );
+      setSelectedIds([]);
+      setBulkDeleteOpen(false);
+      await reload();
+    } catch (caught) {
+      toast(caught instanceof Error ? caught.message : "Could not delete. Try again.", "error");
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -171,6 +228,9 @@ export default function GroceryPage() {
               }}
             >
               <ClipboardList className="h-4 w-4" /> New list
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setBulkModalOpen(true)}>
+              <FileText className="h-4 w-4" /> Bulk add
             </Button>
             <Button
               size="sm"
@@ -271,6 +331,26 @@ export default function GroceryPage() {
             </p>
           </div>
 
+          {selectedIds.length > 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-danger/5 px-4 py-2.5">
+              <p className="text-xs font-semibold text-ink">
+                {selectedIds.length} item{selectedIds.length === 1 ? "" : "s"} selected
+              </p>
+              <div className="flex items-center gap-1">
+                <Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>
+                  Clear
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => setBulkDeleteOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4" /> Delete selected
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           {groceries.length === 0 ? (
             <div className="p-4">
               <EmptyState
@@ -304,6 +384,15 @@ export default function GroceryPage() {
                 <table className="w-full text-left text-sm">
                   <thead className="border-b border-line bg-background/60 text-[10px] uppercase tracking-wide text-muted">
                     <tr>
+                      <th className="w-10 px-4 py-3">
+                        <input
+                          type="checkbox"
+                          aria-label="Select all visible items"
+                          checked={allVisibleSelected}
+                          onChange={toggleAllVisible}
+                          className="h-4 w-4 rounded border-line text-primary-600 focus:ring-primary-400"
+                        />
+                      </th>
                       <th className="px-4 py-3 font-bold">Item</th>
                       <th className="px-4 py-3 font-bold">Category</th>
                       <th className="px-4 py-3 font-bold">Store</th>
@@ -313,8 +402,22 @@ export default function GroceryPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
-                    {filteredGroceries.map((item) => (
-                      <tr key={item.id} className="transition hover:bg-primary-50/30">
+                    {filteredGroceries.map((item) => {
+                      const selected = selectedSet.has(item.id);
+                      return (
+                        <tr
+                          key={item.id}
+                          className={`transition hover:bg-primary-50/30 ${selected ? "bg-primary-50/40" : ""}`}
+                        >
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${item.name}`}
+                              checked={selected}
+                              onChange={() => toggleSelection(item.id)}
+                              className="h-4 w-4 rounded border-line text-primary-600 focus:ring-primary-400"
+                            />
+                          </td>
                         <td className="px-4 py-3">
                           <p className="font-bold text-ink">{item.name}</p>
                           <p className="text-[11px] text-muted">
@@ -361,59 +464,75 @@ export default function GroceryPage() {
                             </button>
                           </div>
                         </td>
-                      </tr>
-                    ))}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
               <div className="divide-y divide-line md:hidden">
-                {filteredGroceries.map((item) => (
-                  <div key={item.id} className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-ink">{item.name}</p>
-                        <p className="text-[11px] text-muted">
-                          {item.category || "Uncategorized"}
-                          {item.brand ? ` · ${item.brand}` : ""}
-                        </p>
-                      </div>
-                      <div className="flex gap-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingItem(item);
-                            setItemModalOpen(true);
-                          }}
-                          className="rounded-lg p-1.5 text-muted hover:bg-primary-50 hover:text-primary-700"
-                          aria-label={`Edit ${item.name}`}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDeleteTarget({ kind: "item", id: item.id, label: item.name })
-                          }
-                          className="rounded-lg p-1.5 text-muted hover:bg-danger/10 hover:text-danger"
-                          aria-label={`Delete ${item.name}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                {filteredGroceries.map((item) => {
+                  const selected = selectedSet.has(item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      className={`flex items-start gap-3 p-4 ${selected ? "bg-primary-50/40" : ""}`}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${item.name}`}
+                        checked={selected}
+                        onChange={() => toggleSelection(item.id)}
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-line text-primary-600 focus:ring-primary-400"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-bold text-ink">{item.name}</p>
+                            <p className="text-[11px] text-muted">
+                              {item.category || "Uncategorized"}
+                              {item.brand ? ` · ${item.brand}` : ""}
+                            </p>
+                          </div>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingItem(item);
+                                setItemModalOpen(true);
+                              }}
+                              className="rounded-lg p-1.5 text-muted hover:bg-primary-50 hover:text-primary-700"
+                              aria-label={`Edit ${item.name}`}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDeleteTarget({ kind: "item", id: item.id, label: item.name })
+                              }
+                              className="rounded-lg p-1.5 text-muted hover:bg-danger/10 hover:text-danger"
+                              aria-label={`Delete ${item.name}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between text-xs">
+                          <span className="text-muted">
+                            {formatNumber(item.quantity, 2)} {item.unit}
+                            {item.store ? ` · ${item.store}` : ""}
+                          </span>
+                          <span className="font-extrabold text-ink">
+                            {formatCurrency(item.currentPrice, currency)}
+                            <span className="text-[10px] font-semibold text-muted">/{item.unit}</span>
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <div className="mt-2 flex items-center justify-between text-xs">
-                      <span className="text-muted">
-                        {formatNumber(item.quantity, 2)} {item.unit}
-                        {item.store ? ` · ${item.store}` : ""}
-                      </span>
-                      <span className="font-extrabold text-ink">
-                        {formatCurrency(item.currentPrice, currency)}
-                        <span className="text-[10px] font-semibold text-muted">/{item.unit}</span>
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           )}
@@ -632,7 +751,29 @@ export default function GroceryPage() {
                       </div>
                     ) : null}
 
-                    <div className="mt-4 flex items-center justify-between border-t border-line pt-3">
+                    <ul className="mt-3 space-y-1 border-t border-line pt-3">
+                      {list.items.slice(0, 4).map((item) => (
+                        <li
+                          key={item.id}
+                          className="flex items-center justify-between gap-2 text-[11px] text-muted"
+                        >
+                          <span className="truncate">
+                            {item.purchased ? "✓ " : ""}
+                            {item.name}
+                          </span>
+                          <span className="shrink-0 tabular-nums">
+                            {item.quantity}×
+                          </span>
+                        </li>
+                      ))}
+                      {list.items.length > 4 ? (
+                        <li className="text-[11px] font-bold text-muted">
+                          +{list.items.length - 4} more
+                        </li>
+                      ) : null}
+                    </ul>
+
+                    <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
                       <p className="flex items-center gap-1 text-[11px] text-muted">
                         <ListChecks className="h-3.5 w-3.5" /> {list.items.length} item
                         {list.items.length === 1 ? "" : "s"}
@@ -679,6 +820,13 @@ export default function GroceryPage() {
         </div>
       ) : null}
 
+      <BulkAddGroceryModal
+        open={bulkModalOpen}
+        onClose={() => setBulkModalOpen(false)}
+        onSaved={reload}
+        currency={currency}
+      />
+
       <GroceryItemModal
         open={itemModalOpen}
         onClose={() => {
@@ -712,6 +860,16 @@ export default function GroceryPage() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => void handleDelete()}
         busy={deleting}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        title="Delete selected grocery items?"
+        message={`${selectedIds.length} grocery item${selectedIds.length === 1 ? "" : "s"} will be removed. Their price history stays intact.`}
+        confirmLabel={`Delete ${selectedIds.length}`}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={() => void handleBulkDelete()}
+        busy={bulkDeleting}
       />
     </div>
   );

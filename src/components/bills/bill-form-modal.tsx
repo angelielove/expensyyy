@@ -540,7 +540,7 @@ export function BillFormModal({ open, onClose, type, bill, onSaved }: BillFormMo
                 <Input
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="any"
                   value={form.previousReading}
                   onChange={(event) => set("previousReading", event.target.value)}
                   placeholder="12500"
@@ -551,7 +551,7 @@ export function BillFormModal({ open, onClose, type, bill, onSaved }: BillFormMo
                 <Input
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="any"
                   value={form.currentReading}
                   onChange={(event) => set("currentReading", event.target.value)}
                   placeholder="12650"
@@ -604,7 +604,7 @@ export function BillFormModal({ open, onClose, type, bill, onSaved }: BillFormMo
                 <Input
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="any"
                   value={form.previousReading}
                   onChange={(event) => set("previousReading", event.target.value)}
                   placeholder="120"
@@ -615,7 +615,7 @@ export function BillFormModal({ open, onClose, type, bill, onSaved }: BillFormMo
                 <Input
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="any"
                   value={form.currentReading}
                   onChange={(event) => set("currentReading", event.target.value)}
                   placeholder="132"
@@ -632,7 +632,7 @@ export function BillFormModal({ open, onClose, type, bill, onSaved }: BillFormMo
                 <Input
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="any"
                   value={form.minimumConsumption}
                   onChange={(event) => set("minimumConsumption", event.target.value)}
                 />

@@ -22,6 +22,14 @@ export async function addGrocery(userId: string, draft: GroceryDraft): Promise<G
   return record as Grocery;
 }
 
+export async function addGroceries(userId: string, drafts: GroceryDraft[]): Promise<Grocery[]> {
+  const created: Grocery[] = [];
+  for (const draft of drafts) {
+    created.push(await addGrocery(userId, draft));
+  }
+  return created;
+}
+
 export async function updateGrocery(
   userId: string,
   existing: Grocery,
@@ -55,6 +63,12 @@ export async function updateGrocery(
 
 export async function deleteGrocery(userId: string, groceryId: string): Promise<void> {
   await deleteRecord(userId, "groceries", groceryId);
+}
+
+export async function deleteGroceries(userId: string, groceryIds: string[]): Promise<void> {
+  for (const groceryId of groceryIds) {
+    await deleteRecord(userId, "groceries", groceryId);
+  }
 }
 
 export async function addManualPriceHistory(

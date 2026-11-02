@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Info, Plus, Trash2 } from "lucide-react";
+import { Check, Info, Plus, Search, Trash2, X } from "lucide-react";
 import { Modal } from "@/components/common/modal";
 import { Button } from "@/components/common/button";
 import { Field, Input, MoneyInput, Select } from "@/components/common/input";
+import { Badge } from "@/components/common/badge";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import { addShoppingList, updateShoppingList } from "@/services/shoppingService";
@@ -42,7 +43,9 @@ export function ShoppingListModal({
   const [budget, setBudget] = useState("");
   const [status, setStatus] = useState<"draft" | "completed">("draft");
   const [items, setItems] = useState<ShoppingListItem[]>([]);
-  const [selectedGrocery, setSelectedGrocery] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerSelected, setPickerSelected] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -53,7 +56,9 @@ export function ShoppingListModal({
     setBudget(list ? String(list.budget || "") : "");
     setStatus(list?.status ?? "draft");
     setItems(list ? list.items.map((item) => ({ ...item })) : []);
-    setSelectedGrocery("");
+    setPickerOpen(false);
+    setPickerSearch("");
+    setPickerSelected([]);
     setError(null);
   }, [open, list]);
 
@@ -62,28 +67,66 @@ export function ShoppingListModal({
   const budgetValue = toNumber(budget);
   const remaining = budgetValue - total;
 
+  const savedItemQuantities = useMemo(() => {
+    const quantities = new Map<string, number>();
+    items.forEach((item) => {
+      if (!item.groceryId) return;
+      quantities.set(item.groceryId, (quantities.get(item.groceryId) ?? 0) + item.quantity);
+    });
+    return quantities;
+  }, [items]);
+
+  const pickerGroceries = useMemo(() => {
+    const term = pickerSearch.trim().toLowerCase();
+    if (!term) return groceries;
+    return groceries.filter((grocery) =>
+      [grocery.name, grocery.brand, grocery.category, grocery.store]
+        .filter(Boolean)
+        .some((value) => value?.toLowerCase().includes(term)),
+    );
+  }, [groceries, pickerSearch]);
+
   const updateItem = (id: string, patch: Partial<ShoppingListItem>) => {
     setItems((current) =>
       current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     );
   };
 
-  const addSavedItem = (groceryId: string) => {
-    const grocery = groceries.find((entry) => entry.id === groceryId);
-    if (!grocery) return;
-    setItems((current) => [
-      ...current,
-      {
-        id: newId(),
-        groceryId: grocery.id,
-        name: grocery.name,
-        quantity: 1,
-        unit: grocery.unit,
-        unitPrice: grocery.currentPrice,
-        purchased: false,
-      },
-    ]);
-    setSelectedGrocery("");
+  const togglePickerSelection = (groceryId: string) => {
+    setPickerSelected((current) =>
+      current.includes(groceryId)
+        ? current.filter((id) => id !== groceryId)
+        : [...current, groceryId],
+    );
+  };
+
+  const addSelectedSavedItems = () => {
+    const chosen = groceries.filter((grocery) => pickerSelected.includes(grocery.id));
+    if (chosen.length === 0) return;
+    setItems((current) => {
+      const next = [...current];
+      chosen.forEach((grocery) => {
+        const existingIndex = next.findIndex((item) => item.groceryId === grocery.id);
+        if (existingIndex >= 0) {
+          const existing = next[existingIndex];
+          next[existingIndex] = { ...existing, quantity: existing.quantity + 1 };
+          return;
+        }
+        next.push({
+          id: newId(),
+          groceryId: grocery.id,
+          name: grocery.name,
+          quantity: 1,
+          unit: grocery.unit,
+          unitPrice: grocery.currentPrice,
+          purchased: false,
+        });
+      });
+      return next;
+    });
+    setPickerSelected([]);
+    setPickerSearch("");
+    setPickerOpen(false);
   };
 
   const addCustomItem = () => {
@@ -198,24 +241,118 @@ export function ShoppingListModal({
               Items ({items.length})
             </h3>
             <div className="flex flex-wrap items-center gap-2">
-              <Select
-                value={selectedGrocery}
-                onChange={(event) => addSavedItem(event.target.value)}
-                className="h-9 w-[220px] py-1.5 text-xs"
-                aria-label="Add a saved grocery item"
+              <Button
+                type="button"
+                size="sm"
+                variant={pickerOpen ? "secondary" : "outline"}
+                onClick={() => {
+                  setPickerOpen((value) => !value);
+                  setPickerSearch("");
+                  setPickerSelected([]);
+                }}
+                disabled={groceries.length === 0}
               >
-                <option value="">Add from saved items…</option>
-                {groceries.map((grocery) => (
-                  <option key={grocery.id} value={grocery.id}>
-                    {grocery.name} — {formatCurrency(grocery.currentPrice, currency)}/{grocery.unit}
-                  </option>
-                ))}
-              </Select>
+                <Search className="h-3.5 w-3.5" /> Add saved items
+              </Button>
               <Button type="button" size="sm" variant="outline" onClick={addCustomItem}>
                 <Plus className="h-3.5 w-3.5" /> Custom item
               </Button>
             </div>
           </div>
+
+          {pickerOpen ? (
+            <div className="rounded-xl border border-line bg-background/60 p-3">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+                  <Input
+                    value={pickerSearch}
+                    onChange={(event) => setPickerSearch(event.target.value)}
+                    placeholder="Search saved items by name, brand, category, or store…"
+                    className="h-9 pl-9 text-xs"
+                    aria-label="Search saved items"
+                    autoFocus
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPickerOpen(false);
+                    setPickerSearch("");
+                    setPickerSelected([]);
+                  }}
+                  className="rounded-lg p-2 text-muted transition hover:bg-danger/10 hover:text-danger"
+                  aria-label="Close saved items picker"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {pickerGroceries.length === 0 ? (
+                <p className="px-1 py-6 text-center text-xs text-muted">
+                  No saved items match “{pickerSearch}”.
+                </p>
+              ) : (
+                <div className="mt-2 max-h-56 space-y-1 overflow-y-auto">
+                  {pickerGroceries.map((grocery) => {
+                    const onListQuantity = savedItemQuantities.get(grocery.id);
+                    const checked = pickerSelected.includes(grocery.id);
+                    return (
+                      <label
+                        key={grocery.id}
+                        className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 transition hover:bg-primary-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => togglePickerSelection(grocery.id)}
+                          className="h-4 w-4 shrink-0 rounded border-line text-primary-600 focus:ring-primary-400"
+                          aria-label={
+                            onListQuantity === undefined
+                              ? `Select ${grocery.name}`
+                              : `Add one more ${grocery.name}`
+                          }
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-bold text-ink">{grocery.name}</p>
+                          <p className="truncate text-[10px] text-muted">
+                            {grocery.category || "Uncategorized"}
+                            {grocery.brand ? ` · ${grocery.brand}` : ""}
+                            {grocery.store ? ` · ${grocery.store}` : ""}
+                          </p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="text-xs font-bold text-ink">
+                            {formatCurrency(grocery.currentPrice, currency)}
+                            <span className="text-[10px] font-semibold text-muted">/{grocery.unit}</span>
+                          </p>
+                          {onListQuantity !== undefined ? (
+                            <Badge tone="success">On list ×{onListQuantity}</Badge>
+                          ) : null}
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2">
+                <p className="text-[11px] font-semibold text-muted">
+                  {pickerSelected.length} selected
+                  <span className="font-normal"> · items already on the list get +1 quantity</span>
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={addSelectedSavedItems}
+                  disabled={pickerSelected.length === 0}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add selected
+                  {pickerSelected.length > 0 ? ` (${pickerSelected.length})` : ""}
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           {items.length === 0 ? (
             <div className="rounded-xl border border-dashed border-line bg-background/60 px-4 py-8 text-center text-xs font-medium text-muted">
@@ -260,7 +397,7 @@ export function ShoppingListModal({
                       <Input
                         type="number"
                         min="0"
-                        step="0.01"
+                        step="any"
                         value={item.quantity}
                         onChange={(event) =>
                           updateItem(item.id, { quantity: toNumber(event.target.value) })
@@ -268,7 +405,29 @@ export function ShoppingListModal({
                         className="h-8 px-2 py-1 text-xs"
                         aria-label="Quantity"
                       />
+                      {item.unit === "kg" ? (
+                        <p className="mt-0.5 text-[9px] text-muted">
+                          = {(item.quantity * 1000).toFixed(0)} g
+                        </p>
+                      ) : null}
                     </div>
+                    {item.unit === "kg" ? (
+                      <div className="col-span-3 sm:col-span-2">
+                        <p className="mb-0.5 text-[10px] font-bold uppercase text-muted">Spend</p>
+                        <MoneyInput
+                          value={item.quantity * item.unitPrice || ""}
+                          onChange={(event) => {
+                            const spend = toNumber(event.target.value);
+                            if (item.unitPrice > 0) {
+                              updateItem(item.id, { quantity: spend / item.unitPrice });
+                            }
+                          }}
+                          placeholder="0.00"
+                          className="h-8 py-1 text-xs"
+                          aria-label="Amount to spend"
+                        />
+                      </div>
+                    ) : null}
                     <div className="col-span-3 sm:col-span-2">
                       <p className="mb-0.5 text-[10px] font-bold uppercase text-muted">Unit</p>
                       <Select
